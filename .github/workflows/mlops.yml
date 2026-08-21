@@ -4,9 +4,10 @@ on:
   push:
     branches: [main]
     paths:
-      - 'data/**.dvc'
-      - 'src/**.py'
+      - 'data/**'
+      - 'src/**'
       - 'params.yaml'
+      - '.github/workflows/**'
   workflow_dispatch:
 
 jobs:
@@ -156,24 +157,29 @@ jobs:
     steps:
 
       - name: SSH deploy to VM
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.VM_HOST }}
-          username: ${{ secrets.VM_USER }}
-          key: ${{ secrets.VM_SSH_KEY }}
-          command_timeout: 3m
-          script: |
-            sudo systemctl restart mlops-serve
-            sleep 8
-            for i in 1 2 3 4 5 6; do
-              if curl -sf http://localhost:8000/health; then
-                echo
-                echo "Health check passed."
-                exit 0
-              fi
-              echo "Health check attempt $i failed, retrying..."
-              sleep 3
-            done
-            echo "Health check failed after retries."
-            sudo journalctl -u mlops-serve -n 80 --no-pager || true
-            exit 1
+        env:
+          VM_HOST: ${{ secrets.VM_HOST }}
+          VM_USER: ${{ secrets.VM_USER }}
+          VM_SSH_KEY: ${{ secrets.VM_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$VM_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "$VM_HOST" >> ~/.ssh/known_hosts
+          ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            "$VM_USER@$VM_HOST" 'bash -s' <<'EOS'
+          sudo systemctl restart mlops-serve
+          sleep 8
+          for i in 1 2 3 4 5 6; do
+            if curl -sf http://localhost:8000/health; then
+              echo
+              echo "Health check passed."
+              exit 0
+            fi
+            echo "Health check attempt $i failed, retrying..."
+            sleep 3
+          done
+          echo "Health check failed after retries."
+          sudo journalctl -u mlops-serve -n 80 --no-pager || true
+          exit 1
+          EOS
