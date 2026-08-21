@@ -4,6 +4,12 @@ run-name: ${{ github.event.head_commit.message || inputs.run_title || 'MLOps Pip
 on:
   push:
     branches: [main]
+    paths:
+      - 'data/**.dvc'
+      - 'data/*.dvc'
+      - 'src/**.py'
+      - 'src/*.py'
+      - 'params.yaml'
   workflow_dispatch:
     inputs:
       run_title:

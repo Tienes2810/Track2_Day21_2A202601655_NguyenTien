@@ -1,0 +1,25 @@
+=== Performance Report ===
+n_train=5996  n_eval=500
+params={'n_estimators': 200, 'min_samples_split': 2}
+accuracy=0.7440  f1_score=0.7429
+
+Confusion matrix (rows=true, cols=pred) labels=[0, 1, 2]:
+[[140  31   2]
+ [ 44 169  14]
+ [  0  37  63]]
+
+Per-class precision / recall:
+  thap(0)       : precision=0.7609  recall=0.8092
+  trung_binh(1) : precision=0.7131  recall=0.7445
+  cao(2)        : precision=0.7975  recall=0.6300
+
+              precision    recall  f1-score   support
+
+        thap       0.76      0.81      0.78       173
+  trung_binh       0.71      0.74      0.73       227
+         cao       0.80      0.63      0.70       100
+
+    accuracy                           0.74       500
+   macro avg       0.76      0.73      0.74       500
+weighted avg       0.75      0.74      0.74       500
+
