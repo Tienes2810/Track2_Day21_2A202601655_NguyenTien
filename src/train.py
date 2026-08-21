@@ -6,9 +6,33 @@ import json
 import joblib
 import os
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import accuracy_score, f1_score
+from sklearn.metrics import (
+    accuracy_score,
+    classification_report,
+    confusion_matrix,
+    f1_score,
+    precision_score,
+    recall_score,
+)
 
 EVAL_THRESHOLD = 0.70
+
+RF_PARAM_KEYS = (
+    "n_estimators",
+    "max_depth",
+    "min_samples_split",
+    "min_samples_leaf",
+    "max_features",
+)
+
+
+def _rf_params(params: dict) -> dict:
+    """Lay cac sieu tham so hop le cho RandomForestClassifier (bo None)."""
+    cleaned = {}
+    for key in RF_PARAM_KEYS:
+        if key in params and params[key] is not None:
+            cleaned[key] = params[key]
+    return cleaned
 
 
 def train(
@@ -27,55 +51,88 @@ def train(
     Tra ve:
         accuracy (float): do chinh xac tren tap danh gia.
     """
+    df_train = pd.read_csv(data_path)
+    df_eval = pd.read_csv(eval_path)
 
-    # TODO 1: Doc du lieu huan luyen va danh gia
-    # df_train = ...
-    # df_eval  = ...
+    X_train = df_train.drop(columns=["target"])
+    y_train = df_train["target"]
+    X_eval = df_eval.drop(columns=["target"])
+    y_eval = df_eval["target"]
 
-    # TODO 2: Tach dac trung (X) va nhan (y)
-    # X_train = df_train.drop(columns=["target"])
-    # y_train = ...
-    # X_eval  = ...
-    # y_eval  = ...
+    rf_params = _rf_params(params)
 
     with mlflow.start_run():
+        mlflow.log_params(rf_params)
 
-        # TODO 3: Ghi nhan cac sieu tham so
-        # mlflow.log_params(...)
+        model = RandomForestClassifier(**rf_params, random_state=42)
+        model.fit(X_train, y_train)
 
-        # TODO 4: Khoi tao va huan luyen RandomForestClassifier
-        # Goi y: su dung random_state=42 de dam bao tinh tai tao
-        # model = RandomForestClassifier(...)
-        # model.fit(...)
+        preds = model.predict(X_eval)
+        acc = accuracy_score(y_eval, preds)
+        f1 = f1_score(y_eval, preds, average="weighted")
 
-        # TODO 5: Du doan tren tap danh gia va tinh chi so
-        # preds = ...
-        # acc   = accuracy_score(...)
-        # f1    = f1_score(..., average="weighted")
+        mlflow.log_metric("accuracy", acc)
+        mlflow.log_metric("f1_score", f1)
+        mlflow.sklearn.log_model(model, "model")
 
-        # TODO 6: Ghi nhan chi so vao MLflow
-        # mlflow.log_metric("accuracy", ...)
-        # mlflow.log_metric("f1_score", ...)
-        # mlflow.sklearn.log_model(model, "model")
+        print(f"Accuracy: {acc:.4f} | F1: {f1:.4f}")
 
-        # TODO 7: In ket qua ra man hinh
-        # print(f"Accuracy: {acc:.4f} | F1: {f1:.4f}")
+        # Bonus 5: canh bao lech lac du lieu (ty le lop < 10%).
+        label_dist = y_train.value_counts(normalize=True).sort_index()
+        dist_payload = {
+            f"class_ratio_{int(cls)}": float(ratio) for cls, ratio in label_dist.items()
+        }
+        for cls, ratio in dist_payload.items():
+            mlflow.log_metric(cls, ratio)
+            if ratio < 0.10:
+                print(
+                    f"WARNING: {cls} = {ratio:.2%} < 10% — du lieu lech lop, "
+                    "can xem xet resampling hoac thu thap them mau."
+                )
 
-        # TODO 8: Luu metrics ra file outputs/metrics.json
-        # File nay duoc doc boi GitHub Actions o Buoc 2
-        # os.makedirs("outputs", exist_ok=True)
-        # with open("outputs/metrics.json", "w") as f:
-        #     json.dump({"accuracy": acc, "f1_score": f1}, f)
+        os.makedirs("outputs", exist_ok=True)
+        with open("outputs/metrics.json", "w") as f:
+            json.dump({"accuracy": float(acc), "f1_score": float(f1), **dist_payload}, f, indent=2)
 
-        # TODO 9: Luu mo hinh ra file models/model.pkl
-        # File nay duoc upload len GCS o Buoc 2
-        # os.makedirs("models", exist_ok=True)
-        # joblib.dump(model, "models/model.pkl")
+        # Bonus 3: bao cao confusion matrix + precision/recall theo lop.
+        cm = confusion_matrix(y_eval, preds, labels=[0, 1, 2])
+        prec = precision_score(
+            y_eval, preds, labels=[0, 1, 2], average=None, zero_division=0
+        )
+        rec = recall_score(
+            y_eval, preds, labels=[0, 1, 2], average=None, zero_division=0
+        )
+        report_lines = [
+            "=== Performance Report ===",
+            f"n_train={len(df_train)}  n_eval={len(df_eval)}",
+            f"params={rf_params}",
+            f"accuracy={acc:.4f}  f1_score={f1:.4f}",
+            "",
+            "Confusion matrix (rows=true, cols=pred) labels=[0, 1, 2]:",
+            str(cm),
+            "",
+            "Per-class precision / recall:",
+            f"  thap(0)       : precision={prec[0]:.4f}  recall={rec[0]:.4f}",
+            f"  trung_binh(1) : precision={prec[1]:.4f}  recall={rec[1]:.4f}",
+            f"  cao(2)        : precision={prec[2]:.4f}  recall={rec[2]:.4f}",
+            "",
+            classification_report(
+                y_eval,
+                preds,
+                labels=[0, 1, 2],
+                target_names=["thap", "trung_binh", "cao"],
+                zero_division=0,
+            ),
+        ]
+        report_text = "\n".join(report_lines)
+        with open("outputs/report.txt", "w", encoding="utf-8") as f:
+            f.write(report_text + "\n")
+        print(report_text)
 
-        pass  # xoa dong nay sau khi hoan thanh tat ca TODO ben tren
+        os.makedirs("models", exist_ok=True)
+        joblib.dump(model, "models/model.pkl")
 
-    # TODO 10: Tra ve acc
-    # return acc
+    return float(acc)
 
 
 if __name__ == "__main__":
