@@ -1,9 +1,15 @@
 name: MLOps Pipeline
+run-name: ${{ github.event.head_commit.message || inputs.run_title || 'MLOps Pipeline' }}
 
 on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      run_title:
+        description: 'Ten lan chay (hien thi tren tab Actions)'
+        required: false
+        default: ''
 
 jobs:
 
